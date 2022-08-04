@@ -137,10 +137,10 @@ def get_forest_fire_data():
 
     # gets the fires with a FIPS_NAME 
     fires = get_fires()
-
+        
     # make the full fires dataframe, merging fires and fires_null
     fires_full = pd.concat([fires, fires_null])
-
+    
     # select just the useful columns
     columns = ["FIRE_SIZE", "FIRE_SIZE_CLASS", "LATITUDE","LONGITUDE", "STATE", "FIPS_NAME", "point"]
     fires_full = fires_full[columns]
@@ -150,7 +150,10 @@ def get_forest_fire_data():
 
     # Make all the FIPS_NAME upper case
     fires_full["FIPS_NAME"] = fires_full["FIPS_NAME"].str.upper()
-
+    
+    print(f"Number of records in FPA FOD database: {len(fires_full)}")
+    print(f"Number of records in FPA FOD database with without county listed: {len(fires_null)}")
+    
     #----------------------------------------
     # add county boundaries to the file
     #----------------------------------------
@@ -159,7 +162,7 @@ def get_forest_fire_data():
     fl_county_bounds = f"{pooch.os_cache('oef')}/cb_2021_us_county_500k.zip"
     county_bounds = gpd.read_file(fl_county_bounds)
 
-    # dataframe for counties and plyogn (polygon)
+    # dataframe for counties and polyogn (polygon)
     county_name_state_geometry = county_bounds[["NAME", "STUSPS", "geometry"]]
 
     # change columns names so consistent across dataframe
@@ -174,11 +177,13 @@ def get_forest_fire_data():
                          left_on=['STATE','FIPS_NAME'], 
                          right_on = ['STATE','FIPS_NAME'])
     
-    # Only include US states (add this to process script)
+    # Only include US states 
     df_states = get_state_abbreviations()
     state_filt = df_merged["STATE"].isin(df_states)
     df_merged = df_merged.loc[state_filt]
 
+    print(f"Number of records in FPA FOD that are US states: {len(df_merged)}")
+    
     # perform statistics on dataset
     df_fires = (df_merged.groupby(['STATE','FIPS_NAME'])
                   #.agg({"FIRE_SIZE":"sum", "FIRE_SIZE":"max"})
@@ -195,6 +200,9 @@ def get_forest_fire_data():
                                       "sum":"TOTAL_FIRE_AREA",
                                       "amax":"MAX_FIRE_AREA",
                                       "amin":"MIN_FIRE_AREA",})
+    
+    print(f"Final number of US counties in FPA FOD database: {len(df_fires)}")
+    
     return df_fires
 
 
@@ -203,6 +211,8 @@ def get_forest_area_data():
     url = f"{pooch.os_cache('oef')}/S_USA.Lndcv_FIA_CntyEst_2017_PL.gdb.zip"
     df_forest_area = gpd.read_file(url)
 
+    print(f"Total number of counties in FIA land cover database: {len(df_forest_area)}")
+    
     # pre-process data
     columns = ['STATE_CNTY_FIPS', 'STATE_FIPS', 'CNTY_FIPS', 'STATE_NAME', 'CNTY_NAME',
            'SAMPLEDLANDWATER_ACRES', 'SAMPLEDLANDWATER_ERR',
@@ -239,6 +249,8 @@ def get_forest_area_data():
 
     # make county name uppercase 
     df_forest_area.COUNTY = df_forest_area.COUNTY.str.upper()
+    
+    print(f"Number of US counties in FIA land cover database: {len(df_forest_area)}")
 
     return df_forest_area
 
@@ -248,6 +260,8 @@ def get_cell_tower_data():
     url = f"{pooch.os_cache('oef')}/FCC_cellular_tower_locations.csv"
     towers = pd.read_csv(url)
 
+    print(f"Total Number of records in cell tower dataset: {len(towers)}")
+    
     # Only include US states
     df_states = get_state_abbreviations()
     state_filt = towers["LocState"].isin(df_states)
@@ -261,6 +275,8 @@ def get_cell_tower_data():
     filt = towers.LocCounty.str.isspace()
     towers_null = towers.loc[filt]
     towers_comp = towers.loc[~filt]
+    
+    print(f"Number of records in cell tower dataset without county name: {len(towers_null)}")
 
     # replace missing county names 
     county_polygons = get_county_polygons()
@@ -272,6 +288,8 @@ def get_cell_tower_data():
     # complete towers dataset
     towers_full = pd.concat([towers_comp, towers_null])
 
+    print(f"Number of records in cell tower dataset after reverse geoencoding: {len(towers_full)}")
+    
     # count number of towers in each county
     towers_out = (towers_full.groupby(["LocCounty","LocState"])
                   .count()
@@ -282,6 +300,8 @@ def get_cell_tower_data():
     # rename columns
     df_towers = towers_out.rename(columns={"LocCounty":"COUNTY", "LocState":"STATE","num_towers":"N_TOWERS"})
 
+    print(f"Final number of counties in cell tower dataset: {len(df_towers)}")
+
     return df_towers
 
 
@@ -290,11 +310,18 @@ def create_complete_dataset():
     dfs = [get_forest_fire_data(), get_cell_tower_data(), get_forest_area_data()]
     df_final = functools.reduce(lambda left, right: pd.merge(left, right, on=['STATE','COUNTY']), dfs)
     
+    print(f"Number of records in merged dataset: {len(df_final)}")
     # reset the index
     df_final = df_final.reset_index()
 
     # only keep counties where forest area in acres is positive
+    filt = (df_final["FOREST_ACRES"] < 0)
+    df_negative_area = df_final.loc[filt]
+    
     filt = (df_final["FOREST_ACRES"] > 0)
     df_final = df_final.loc[filt]
-
+    
+    print(f"Number of records with negative forest area: {len(df_negative_area)}")
+    print(f"Number of records in the final cleaned dataset: {len(df_final)}")
+    
     return df_final
