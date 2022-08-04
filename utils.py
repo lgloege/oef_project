@@ -13,7 +13,7 @@ import sqlite3
 def get_pooch():
     POOCH = pooch.create(
         path=pooch.os_cache("oef"),
-        base_url="https://github.com/lgloege/wildfires_cell_towers/data/",
+        base_url="https://github.com/lgloege/oef_project/raw/main/data/",
         version_dev="main",
         registry={
             "RDS-2013-0009.5_SQLITE.zip": "8525c71c09705ec5381f468923bc8fe5ae98019119906b5693235cb138a8705d",
